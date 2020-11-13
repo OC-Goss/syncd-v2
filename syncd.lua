@@ -6,11 +6,14 @@ local utils = require("utils")
 local addr = "127.0.0.1"
 local port = 2137
 local headerfmt = ">I4"
+local clientName = "Syncd client alpha v0.1"
+local protocolVersion = "0.1"
 local headerlen = string.packsize(headerfmt)
 local maxRetries = {
     reconnect = 3
 }
-local socket
+--local socket
+socket = nil
 
 local function log(str, ...)
     local logfile = io.open("socklog.txt", "a")
@@ -93,9 +96,15 @@ local function recv(sock, len)
     end
 end
 
-
 local function processmsg(msg)
-    log("Message received: %s\n", msg)
+    local msgType = string.unpack("B", msg)
+    if msgType == 0x01 then -- hello ok response
+        local serverProtocol, serverName = string.unpack("zz", msg, 2)
+        log("Connected to %s (protocol version %s)", serverName, serverProtocol)
+    elseif msgType == 0x02 then -- hello error response
+        local reason = string.unpack("z", msg, 2)
+        log("Error connecting to the server: %s", reason)
+    end
 end
 
 local function getMsgHandler()
@@ -128,16 +137,14 @@ local function getMsgHandler()
 
         -- second stage - while there are whole messages in buffer, dispatch message for processing and then remove it from buffer
         log("Current buffer length: %d", #buf)
-        if msglen then
-            while #buf - headerlen >= msglen do
-                processmsg(string.sub(buf, headerlen+1, headerlen+msglen))
-                buf = string.sub(buf, headerlen+msglen+1)
-                -- read next message length if available
-                if #buf >= headerlen then
-                    msglen = string.unpack(headerfmt, string.sub(buf, 1, headerlen))
-                else
-                    msglen = nil
-                end
+        while msglen and #buf - headerlen >= msglen do
+            processmsg(string.sub(buf, headerlen+1, headerlen+msglen))
+            buf = string.sub(buf, headerlen+msglen+1)
+            -- read next message length if available
+            if #buf >= headerlen then
+                msglen = string.unpack(headerfmt, string.sub(buf, 1, headerlen))
+            else
+                msglen = nil
             end
         end
     end
@@ -145,7 +152,12 @@ local function getMsgHandler()
    return sockmsg
 end
 
-local ipsum = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. In id ipsum nibh. Fusce tempor nisl ac enim finibus commodo. Nam lorem est, tincidunt id sagittis id, euismod ac est. Pellentesque sapien velit, pellentesque sollicitudin turpis at, mattis malesuada dolor. Nunc lacinia sollicitudin molestie. Quisque at justo neque. Praesent felis quam, imperdiet vel ipsum in, consectetur elementum ipsum. Phasellus sollicitudin est non auctor ultrices. Sed auctor nulla at sem rutrum consequat. Phasellus semper ante non fringilla malesuada. Suspendisse non volutpat massa. Nunc non tincidunt arcu. Nunc sed turpis eu leo mollis congue dapibus nec erat. Curabitur blandit tortor in sapien blandit tincidunt. Praesent feugiat leo sed tortor rutrum, vitae fermentum tortor cursus. Proin lobortis volutpat elit, nec suscipit ligula hendrerit ac. Nulla et interdum orci. Nulla interdum leo feugiat, rhoncus quam sed, porttitor lectus. Nulla ornare porta erat in ullamcorper. Nam facilisis odio tellus, vehicula rutrum purus pellentesque sed. Sed nec magna convallis, dignissim lacus fermentum, ultrices lorem. Sed eget metus et elit euismod sagittis. Vestibulum leo lacus, mattis id pharetra sit amet, lobortis in libero. Phasellus mattis justo quis elementum vulputate. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; Maecenas consectetur mauris sed leo sollicitudin vehicula. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Ut tempus magna justo, quis maximus elit mattis in. Nulla rutrum rhoncus neque ac consectetur. Nam venenatis nulla sit amet est suscipit rutrum. Aenean bibendum elit leo, sed lacinia massa mollis et. Sed nec nisi fringilla, condimentum elit a, mollis libero. Aliquam erat volutpat. In posuere orci orci, vel euismod arcu efficitur et. Donec pretium vestibulum nunc in ultricies. Interdum et malesuada fames ac ante ipsum primis in faucibus. Nunc odio lectus, fermentum sit amet facilisis eget, egestas eu urna. Morbi pellentesque nisl sapien, vitae fringilla felis auctor dignissim. Cras vestibulum magna erat, ac dignissim nisi ornare vel. Fusce purus odio, sodales sed vulputate et, elementum congue nulla. Integer sed porttitor metus. Maecenas non tincidunt dolor, sit amet rutrum enim. Nullam quis quam rutrum, molestie nibh ut, elementum dolor. Sed quam magna, eleifend in sagittis ut, molestie nec dui. Ut pharetra nulla nec iaculis pulvinar. Etiam vel eros ullamcorper, scelerisque lorem eget, bibendum purus. Proin massa lorem, rhoncus ac malesuada ac, faucibus sed ipsum. Etiam mollis ligula vel turpis dignissim, ac consectetur arcu luctus. Ut neque justo, iaculis nec mollis vel, sollicitudin nec eros. Praesent posuere nulla sed arcu pretium molestie. Sed et nisl non odio ornare varius. Suspendisse potenti. Quisque dapibus sollicitudin erat, vestibulum condimentum nibh. Integer accumsan metus eros, vitae scelerisque leo mollis ac. Quisque lobortis tincidunt est sed pulvinar. Vestibulum mollis accumsan turpis, feugiat finibus nulla sagittis eu. Aenean eu sodales ex, eget sagittis mauris. Nam eget lectus id dolor eleifend consequat hendrerit ac orci. Integer iaculis efficitur magna, sit amet elementum arcu facilisis a. Suspendisse blandit, turpis eget ornare feugiat, ante leo blandit diam, posuere ultricies ipsum nunc eu sapien. Cras luctus justo quam, eget malesuada quam venenatis id. Maecenas volutpat enim ac porttitor tempor. Sed ac."
+local msgHandler = getMsgHandler()
+
+function disconnect()
+    event.ignore("internet_ready", msgHandler)
+    socket.close()
+end
 
 local ok
 ok, socket = connect(addr, port)
@@ -153,11 +165,6 @@ if not ok then
     error("Couldn't connect to the server, check logs for more info")
 end
 
-event.listen("internet_ready", getMsgHandler())
+event.listen("internet_ready", msgHandler)
 
-if send(socket, msgfmt(ipsum)) then
-    print("Message sent")
-else
-    print("Error occured")
-end
-
+send(socket, msgfmt("\x00" .. string.pack("zz", clientName, protocolVersion)))
