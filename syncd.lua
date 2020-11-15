@@ -98,10 +98,10 @@ end
 
 local function processmsg(msg)
     local msgType = string.unpack("B", msg)
-    if msgType == 0x01 then -- hello ok response
+    if msgType == 0x80 then -- hello ok response
         local serverProtocol, serverName = string.unpack("zz", msg, 2)
         log("Connected to %s (protocol version %s)", serverName, serverProtocol)
-    elseif msgType == 0x02 then -- hello error response
+    elseif msgType == 0x81 then -- hello error response
         local reason = string.unpack("z", msg, 2)
         log("Error connecting to the server: %s", reason)
     end
@@ -167,4 +167,4 @@ end
 
 event.listen("internet_ready", msgHandler)
 
-send(socket, msgfmt("\x00" .. string.pack("zz", clientName, protocolVersion)))
+send(socket, msgfmt("\x00" .. string.pack("zz", protocolVersion, clientName)))
