@@ -2,7 +2,19 @@ import socketserver
 import threading
 import signal
 import sys
+import os
+from queue import Queue, Empty
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 from message import Message, MessageType
+
+host = ""
+port = 2137
+
+class SocketNotifierEventHandler(FileSystemEventHandler):
+    def on_any_event(self, event):
+        print("Event: {}".format(str(event)))
+        notifications.put(event)
 
 class MessageHandler(object):
     def __init__(self):
@@ -16,8 +28,9 @@ class MessageHandler(object):
             MessageType.GET_FILE: self.get_file
         }
 
-    def handle(self, msg):
-        return self.handlers[msg.type](msg)
+    def handle(self, data):
+        msg = Message(data)
+        return self.handlers[msg.type](msg).toBytes()
 
     def hello(self, msg):
         if msg.protocol_version == self.protocol_version:
@@ -39,11 +52,23 @@ class MessageHandler(object):
     def get_file(self, msg):
         pass
 
+    def send_notify(self, event):
+        return Message({
+            'modified': MessageType.NOTIFY_CHANGE,
+            'created': MessageType.NOTIFY_CREATE,
+            'deleted': MessageType.NOTIFY_DELETE,
+            'moved': MessageType.NOTIFY_DELETE
+        }[event.event_type], event.src_path).toBytes()
+
+class SocketClosedException(ConnectionError):
+    pass
+
 class ThreadedTCPRequestHandler(socketserver.StreamRequestHandler):
     header_len = 4
 
     def setup(self, *args, **kwargs):
         super(ThreadedTCPRequestHandler, self).setup(*args, **kwargs)
+        self.request.setblocking(False)
         self.message_handler = MessageHandler()
 
     def read_len(self, data):
@@ -52,40 +77,71 @@ class ThreadedTCPRequestHandler(socketserver.StreamRequestHandler):
     def prepend_len(self, data):
         return int.to_bytes(len(data), self.header_len, byteorder='big', signed=False) + data
 
-    def handle_message(self, data):
-        received_msg = Message(data)
-        response_msg = self.message_handler.handle(received_msg)
-        print("{} responding with: {}".format(self.client_address, response_msg.toBytes()))
-        self.wfile.write(self.prepend_len(response_msg.toBytes()))
+    def read_parallel(self, length, parallel_func, *args, **kwargs):
+        read_total = 0
+        data = b''
+        while read_total < length:
+            try:
+                # rfile.read and request.recv in non-blocking mode both return data in bytes
+                # object when it's available, and an empty bytes object when the socket is closed
+                # read returns None when no data is available (despite what the docs say)
+                # recv raises BlockingIOError when no data is available
+                # we use rfile.read for performance reasons (catching exceptions is expensive)
+                received = self.rfile.read(length)
+            except BlockingIOError:
+                # in case we change the implementation to use request.recv
+                pass
+            else:
+                # if data was received and it's not an empty bytes object
+                if received and len(received) > 0:
+                    read_total += len(received)
+                    data += received
+                elif received == b'':
+                    raise SocketClosedException
+            parallel_func(*args, **kwargs)
+        return data
+
+    def process_events(self, *args, **kwargs):
+        try:
+            while not notifications.empty():
+                self.wfile.write(self.prepend_len(self.message_handler.send_notify(notifications.get(False))))
+        except Empty:
+            pass
 
     def handle(self):
         print("{} connected".format(self.client_address))
-        size = self.rfile.read(self.header_len)
-        while size != b'':
-            data = self.rfile.read(self.read_len(size))
-            if data != b'':
+        try:
+            while True:
+                size = self.read_parallel(self.header_len, self.process_events, self)
+                data = self.read_parallel(self.read_len(size), self.process_events, self)
                 print("{} wrote: {}".format(self.client_address, data))
-                self.handle_message(data)
-                self.wfile.flush()
-            else:
-                break
-            size = self.rfile.read(self.header_len)
+                response = self.message_handler.handle(data)
+                print("{} responding with: {}".format(self.client_address, response))
+                self.wfile.write(self.prepend_len(response))
+        except SocketClosedException:
+            pass
         print("{} end of transmission".format(self.client_address))
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     pass
 
 if __name__ == "__main__":
-    host = ""
-    port = 2137
+    monitored_path = sys.argv[1] if len(sys.argv) > 1 else '.'
+    notifications = Queue()
+    observer = Observer()
+    observer.schedule(SocketNotifierEventHandler(), monitored_path, recursive=True)
+
     server = ThreadedTCPServer((host, port), ThreadedTCPRequestHandler)
     with server:
         server_thread = threading.Thread(target=server.serve_forever)
         server_thread.daemon = True
         server_thread.start()
+        observer.start()
 
-        while True:
-            try:
-                signal.signal(signal.SIGINT, signal.default_int_handler)
-            except KeyboardInterrupt:
-                sys.exit()
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+        try:
+            while observer.isAlive():
+                observer.join(0.5)
+        except KeyboardInterrupt:
+            observer.stop()
+        observer.join()

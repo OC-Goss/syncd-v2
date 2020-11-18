@@ -60,6 +60,7 @@ local function send(sock, msg)
     -- sock.write should always write 0 bytes or the whole message, but we do a standard write loop just in case
     while written < #msg do
         --log("Sending %s", string.sub(msg, written+1))
+
         local bytes, reason = sock.write(string.sub(msg, written+1)) -- correct string start for lua indexing starting at 1
         if bytes then
             written = written + bytes
@@ -104,6 +105,9 @@ local function processmsg(msg)
     elseif msgType == 0x81 then -- hello error response
         local reason = string.unpack("z", msg, 2)
         log("Error connecting to the server: %s", reason)
+    elseif msgType == 0x87 or msgType == 0x88 or msgType == 0x89 then
+        local path = string.unpack("z", msg, 2)
+        log("File %s modified", path)
     end
 end
 
