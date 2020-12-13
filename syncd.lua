@@ -2,6 +2,8 @@ local component = require("component")
 local internet = component.isAvailable("internet") and component.internet
 local event = require("event")
 local utils = require("utils")
+local MessageType = require("messagetype")
+local Message = require("message")
 
 local addr = "127.0.0.1"
 local port = 2137
@@ -97,18 +99,44 @@ local function recv(sock, len)
     end
 end
 
-local function processmsg(msg)
-    local msgType = string.unpack("B", msg)
-    if msgType == 0x80 then -- hello ok response
-        local serverProtocol, serverName = string.unpack("zz", msg, 2)
-        log("Connected to %s (protocol version %s)", serverName, serverProtocol)
-    elseif msgType == 0x81 then -- hello error response
-        local reason = string.unpack("z", msg, 2)
-        log("Error connecting to the server: %s", reason)
-    elseif msgType == 0x87 or msgType == 0x88 or msgType == 0x89 then
-        local path = string.unpack("z", msg, 2)
-        log("File %s modified", path)
+local function messageHandler(data)
+    local function helloOk(msg)
+        log("Connected to %s (protocol version %s)", msg.serverName, msg.protocolVersion)
     end
+    local function helloError(msg)
+        log("Error connecting to the server: %s", msg.reason)
+    end
+    local function sendSubscriptions(msg) end
+    local function subscribeResponse(msg) end
+    local function sendHashes(msg) end
+    local function sendFile(msg) end
+    local function sendFileError(msg) end
+    local function notifyChange(msg)
+        log("File %s modified", msg.path)
+    end
+    local function notifyDelete(msg)
+        log("File %s deleted", msg.path)
+    end
+    local function notifyCreate(msg)
+        log("File %s created", msg.path)
+    end
+
+    local handlers = {
+        [MessageType.HELLO_OK] = helloOk,
+        [MessageType.HELLO_ERROR] = helloError,
+        [MessageType.SEND_SUBSCRIPTIONS] = sendSubscriptions,
+        [MessageType.SUBSCRIBE_RESPONSE] = subscribeResponse,
+        [MessageType.SEND_HASHES] = sendHashes,
+        [MessageType.SEND_FILE] = sendFile,
+        [MessageType.SEND_FILE_ERROR] = sendFileError,
+        [MessageType.NOTIFY_CHANGE] = notifyChange,
+        [MessageType.NOTIFY_DELETE] = notifyDelete,
+        [MessageType.NOTIFY_CREATE] = notifyCreate
+    }
+
+    log("message handler called with data: %s", data)
+    local message = Message(data)
+    handlers[message.type](message)
 end
 
 local function getMsgHandler()
@@ -142,7 +170,7 @@ local function getMsgHandler()
         -- second stage - while there are whole messages in buffer, dispatch message for processing and then remove it from buffer
         log("Current buffer length: %d", #buf)
         while msglen and #buf - headerlen >= msglen do
-            processmsg(string.sub(buf, headerlen+1, headerlen+msglen))
+            messageHandler(string.sub(buf, headerlen+1, headerlen+msglen))
             buf = string.sub(buf, headerlen+msglen+1)
             -- read next message length if available
             if #buf >= headerlen then
@@ -153,7 +181,7 @@ local function getMsgHandler()
         end
     end
 
-   return sockmsg
+    return sockmsg
 end
 
 local msgHandler = getMsgHandler()
