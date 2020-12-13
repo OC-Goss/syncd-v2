@@ -68,7 +68,7 @@ class Message(object):
             self.type = MessageType(raw_type)
             msg_format = Message.formats[self.type]
             if msg_format.struct_fmt and len(msg_format.struct_fmt) > 0:
-                for name, obj in zip(msg_format.field_names, rawutil.unpack(msg_format.struct_fmt, data[1:])):
+                for name, obj in zip(msg_format.field_names, rawutil.unpack(msg_format.struct_fmt, data[rawutil.struct.calcsize(Message.type_format):])):
                     if type(name) != str:
                         setattr(self, name.__name__, [name._make(el) for el in obj])
                     else:
