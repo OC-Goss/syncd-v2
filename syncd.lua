@@ -14,10 +14,11 @@ local headerlen = string.packsize(headerfmt)
 local maxRetries = {
     reconnect = 3
 }
+local subscribedPaths = {}
 --local socket
 socket = nil
 
-local function log(str, ...)
+function log(str, ...)
     local logfile = io.open("socklog.txt", "a")
     logfile:write(string.format(str.."\n", ...))
     logfile:close()
@@ -102,11 +103,21 @@ end
 local function messageHandler(data)
     local function helloOk(msg)
         log("Connected to %s (protocol version %s)", msg.serverName, msg.protocolVersion)
+        log("Asking for available subscriptions")
+        send(socket, msgfmt(Message(MessageType.GET_SUBSCRIPTIONS):toBytes()))
     end
     local function helloError(msg)
         log("Error connecting to the server: %s", msg.reason)
     end
-    local function sendSubscriptions(msg) end
+    local function sendSubscriptions(msg)
+        log("Got subscription list from the server:")
+        for _, path in ipairs(msg.paths) do
+            log("%s", path)
+        end
+        subscribedPaths = utils.deepCopy(msg.paths)
+        log("Subscribing to all paths")
+        send(socket, msgfmt(Message(MessageType.SUBSCRIBE, #subscribedPaths, subscribedPaths):toBytes()))
+    end
     local function subscribeResponse(msg) end
     local function sendHashes(msg) end
     local function sendFile(msg) end
@@ -199,4 +210,4 @@ end
 
 event.listen("internet_ready", msgHandler)
 
-send(socket, msgfmt("\x00" .. string.pack("zz", protocolVersion, clientName)))
+send(socket, msgfmt(Message(MessageType.HELLO, protocolVersion, clientName):toBytes()))

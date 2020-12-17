@@ -27,10 +27,13 @@ class MessageHandler(object):
             MessageType.COMPARE_FILES: self.compare_files,
             MessageType.GET_FILE: self.get_file
         }
+        self.subscriptions = []
 
     def handle(self, data):
         msg = Message(data)
-        return self.handlers[msg.type](msg).toBytes()
+        response = self.handlers[msg.type](msg)
+        if response is not None:
+            return response.toBytes()
 
     def hello(self, msg):
         if msg.protocol_version == self.protocol_version:
@@ -41,10 +44,17 @@ class MessageHandler(object):
             return response_msg
 
     def get_subscriptions(self, msg):
-        pass
+        to_send = []
+        for root, dirs, files in os.walk(monitored_path, followlinks=True):
+            for directory in dirs:
+                to_send.append(os.path.join(root, directory))
+            for file in files:
+                to_send.append(os.path.join(root, file))
+        response_msg = Message(MessageType.SEND_SUBSCRIPTIONS, len(to_send), to_send)
+        return response_msg
 
     def subscribe(self, msg):
-        pass
+        self.subscriptions = msg.paths
 
     def compare_files(self, msg):
         pass
@@ -53,12 +63,13 @@ class MessageHandler(object):
         pass
 
     def send_notify(self, event):
-        return Message({
-            'modified': MessageType.NOTIFY_CHANGE,
-            'created': MessageType.NOTIFY_CREATE,
-            'deleted': MessageType.NOTIFY_DELETE,
-            'moved': MessageType.NOTIFY_DELETE
-        }[event.event_type], event.src_path).toBytes()
+        if event.src_path in self.subscriptions:
+            return Message({
+                'modified': MessageType.NOTIFY_CHANGE,
+                'created': MessageType.NOTIFY_CREATE,
+                'deleted': MessageType.NOTIFY_DELETE,
+                'moved': MessageType.NOTIFY_DELETE
+            }[event.event_type], event.src_path).toBytes()
 
 class SocketClosedException(ConnectionError):
     pass
@@ -101,10 +112,14 @@ class ThreadedTCPRequestHandler(socketserver.StreamRequestHandler):
             parallel_func(*args, **kwargs)
         return data
 
+    def send_message(self, message):
+        if message is not None:
+            self.wfile.write(self.prepend_len(message))
+
     def process_events(self, *args, **kwargs):
         try:
             while not notifications.empty():
-                self.wfile.write(self.prepend_len(self.message_handler.send_notify(notifications.get(False))))
+                self.send_message(self.message_handler.send_notify(notifications.get(False)))
         except Empty:
             pass
 
@@ -117,7 +132,7 @@ class ThreadedTCPRequestHandler(socketserver.StreamRequestHandler):
                 print("{} wrote: {}".format(self.client_address, data))
                 response = self.message_handler.handle(data)
                 print("{} responding with: {}".format(self.client_address, response))
-                self.wfile.write(self.prepend_len(response))
+                self.send_message(response)
         except SocketClosedException:
             pass
         print("{} end of transmission".format(self.client_address))
