@@ -26,6 +26,7 @@ Message.formats = {
     [MessageType.HELLO_ERROR] = Format(">z", {"reason"}),
     [MessageType.SEND_SUBSCRIPTIONS] = Format(">I4 /0[z]", {"numPaths", "paths"}),
     [MessageType.SUBSCRIBE_RESPONSE] = Format(">I4 /0[z] I4 /2[zI2]", {"numPaths", "paths", "numPathsFail", "pathsFail"}),
+    -- proposal for the future: {numPaths = "I4", paths = {__size = "numPaths", "z"}, numPathsFail = "I4", pathsFail = {__size = "numPaths", path = "z", errorCode = "I2"}}
     [MessageType.SEND_HASHES] = Format(">I4 /0[z z]", {"numPaths", "paths"}),
     [MessageType.SEND_FILE] = Format(">zz", {"path", "contents"}),
     [MessageType.SEND_FILE_ERROR] = Format(">zz", {"path", "reason"}),
@@ -35,20 +36,20 @@ Message.formats = {
 }
 
 local function unpackArray(lenPattern, pattern, data, offset, fieldNames)
-    local len, read = string.unpack(lenPattern, data, offset)
-    offset = offset + read
+    local len, offset = string.unpack(lenPattern, data, offset)
 
     local res = {}
-    for i = 1, times do
+    for i = 1, len do
         local unpacked = table.pack(string.unpack(pattern, data, offset))
-        offset = offset + unpacked[#unpacked]
+        offset = unpacked[#unpacked]
+        unpacked[#unpacked] = nil -- remove last unpacked byte from unpacked values
         if fieldNames then
             res[i] = {}
         end
-        for i, v in ipairs(unpacked) do
+        for j, v in ipairs(unpacked) do
             if fieldNames then
-                if fieldNames[i] then
-                    res[i][fieldNames[i]] = v
+                if fieldNames[j] then
+                    res[i][fieldNames[j]] = v
                 end
             else
                 res[i] = v
@@ -95,9 +96,7 @@ function Message:fromBytes(data)
     elseif self.type == MessageType.COMPARE_FILES then
         self.paths, self.numPaths = unpackArray(">I4", ">zI4", data, offset, {"path", "size"})
     elseif self.type == MessageType.SUBSCRIBE_RESPONSE then
-        local read
-        self.paths, self.numPaths, read = unpackArray(">I4", ">z", data, offset)
-        offset = offset + read
+        self.paths, self.numPaths, offset = unpackArray(">I4", ">z", data, offset)
         self.pathsFail, self.numPathsFail = unpackArray(">I4", ">zI2", data, offset, {"path", "errorCode"})
     elseif self.type == MessageType.SEND_HASHES then
         self.paths, self.numPaths = unpackArray(">I4", "zz", data, offset, {"path", "hash"})
