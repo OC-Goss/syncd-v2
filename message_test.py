@@ -11,7 +11,7 @@ def test(*args):
         print("Test failed")
         exit()
 
-paths = [["foo.lua"], ["bar.txt"], ["baz.py"]]
+paths = ["foo.lua", "bar.txt", "baz.py"]
 paths2 = [["foo.lua", 5363], ["bar.txt", 324], ["baz.py", 64312]]
 paths3 = [["baz.exe", 43], ["foo.psd", 234], ["bar.bin", 73]]
 paths4 = [["bar.lua", "49a09acd"], ["baz.html", "6439eafe0"], ["foo.xml", "4068adce"]]

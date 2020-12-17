@@ -27,13 +27,13 @@ class Message(object):
     formats = {
         MessageType.HELLO: Format(">nn", ["protocol_version", "client_name"]),
         MessageType.GET_SUBSCRIPTIONS: Format("", []),
-        MessageType.SUBSCRIBE: Format(">I /0[n]", ["num_paths", namedtuple("paths", ["path"])]),
+        MessageType.SUBSCRIBE: Format(">I /0(n)", ["num_paths", "paths"]),
         MessageType.COMPARE_FILES: Format(">I /0[n I]", ["num_paths", namedtuple("paths", ["path", "size"])]),
         MessageType.GET_FILE: Format(">n", ["path"]),
         MessageType.HELLO_OK: Format(">nn", ["protocol_version", "server_name"]),
         MessageType.HELLO_ERROR: Format(">n", ["reason"]),
-        MessageType.SEND_SUBSCRIPTIONS: Format(">I /0[n]", ["num_paths", namedtuple("paths", ["path"])]),
-        MessageType.SUBSCRIBE_RESPONSE: Format(">I /0[n] I /2[n H]", ["num_paths", namedtuple("paths", ["path"]), "num_paths_fail", namedtuple("paths_fail", ["path", "error_code"])]),
+        MessageType.SEND_SUBSCRIPTIONS: Format(">I /0(n)", ["num_paths", "paths"]),
+        MessageType.SUBSCRIBE_RESPONSE: Format(">I /0(n) I /2[n H]", ["num_paths", "paths", "num_paths_fail", namedtuple("paths_fail", ["path", "error_code"])]),
         MessageType.SEND_HASHES: Format(">I /0[n n]", ["num_paths", namedtuple("paths", ["path", "hash"])]),
         MessageType.SEND_FILE: Format(">nn", ["path", "contents"]),
         MessageType.SEND_FILE_ERROR: Format(">nn", ["path", "reason"]),
@@ -68,11 +68,13 @@ class Message(object):
             self.type = MessageType(raw_type)
             msg_format = Message.formats[self.type]
             if msg_format.struct_fmt and len(msg_format.struct_fmt) > 0:
+                bytes_to_string = lambda obj: list(map(lambda s: s.decode("utf-8") if type(s) == bytes else s, obj)) if hasattr(obj, '__iter__') and type(obj) == list else obj
                 for name, obj in zip(msg_format.field_names, rawutil.unpack(msg_format.struct_fmt, data[rawutil.struct.calcsize(Message.type_format):])):
                     if type(name) != str:
-                        setattr(self, name.__name__, [name._make(el) for el in obj])
+                        setattr(self, name.__name__, [name._make(bytes_to_string(el)) for el in obj])
                     else:
-                        setattr(self, name, obj)
+                        obj = bytes_to_string(obj)
+                        setattr(self, name, obj if type(obj) != bytes else obj.decode("utf-8"))
         except ValueError as e:
             print("Unsupported message type id {}".format(raw_type))
 
