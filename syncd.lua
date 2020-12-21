@@ -2,7 +2,7 @@ local component = require("component")
 local internet = component.isAvailable("internet") and component.internet
 local event = require("event")
 local utils = require("utils")
-local messageHandlers = require("messagehandlers")
+local messageHandler = require("messagehandler")
 local MessageType = require("messagetype")
 local Message = require("message")
 local Socket = require("socket")
@@ -36,8 +36,7 @@ local function internetReadyHandler(ev, inetAddress, socketId)
         if ok then
             for _, data in ipairs(messages) do
                 log("Calling message handler with data: %s", data)
-                local message = Message(data)
-                local response = messageHandlers[message.type](message, conversationState)
+                local response = messageHandler(data, conversationState)
                 if response then
                     socket:writeLenPrep(response)
                 end

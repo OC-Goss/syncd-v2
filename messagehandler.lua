@@ -6,7 +6,7 @@ local handlers = {
     [MessageType.HELLO_OK] = function(msg, state)
         log("Connected to %s (protocol version %s)", msg.serverName, msg.protocolVersion)
         log("Asking for available subscriptions")
-        return Message(MessageType.GET_SUBSCRIPTIONS):toBytes()
+        return Message(MessageType.GET_SUBSCRIPTIONS)
     end,
 
     [MessageType.HELLO_ERROR] = function(msg, state)
@@ -20,7 +20,7 @@ local handlers = {
         end
         state.subscribedPaths = utils.deepCopy(msg.paths)
         log("Subscribing to all paths")
-        return Message(MessageType.SUBSCRIBE, #state.subscribedPaths, state.subscribedPaths):toBytes()
+        return Message(MessageType.SUBSCRIBE, #state.subscribedPaths, state.subscribedPaths)
     end,
     
     [MessageType.SUBSCRIBE_RESPONSE] = function(msg, state) end,
@@ -41,4 +41,12 @@ local handlers = {
     end,
 }
 
-return handlers
+local function messageHandler(data, state)
+    local message = Message(data)
+    local response = handlers[message.type](message, state)
+    if response then
+        return response:toBytes()
+    end
+end
+
+return messageHandler
