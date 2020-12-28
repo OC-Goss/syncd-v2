@@ -18,7 +18,7 @@ class SocketNotifierEventHandler(FileSystemEventHandler):
 
 class MessageHandler(object):
     def __init__(self):
-        self.protocol_version = "0.1"
+        self.protocol_version = "0.1.1"
         self.server_name = "Syncd server alpha v0.1"
         self.handlers = {
             MessageType.HELLO: self.hello,
@@ -48,20 +48,21 @@ class MessageHandler(object):
         for root, dirs, files in os.walk(monitored_path, followlinks=True):
             for directory in dirs:
                 full_path = os.path.join(root, directory)
-                to_send.append(os.path.relpath(full_path, monitored_path))
+                to_send.append([os.path.relpath(full_path, monitored_path), True])
             for file in files:
                 full_path = os.path.join(root, file)
-                to_send.append(os.path.relpath(full_path, monitored_path))
+                to_send.append([os.path.relpath(full_path, monitored_path), False])
         response_msg = Message(MessageType.SEND_SUBSCRIPTIONS, len(to_send), to_send)
         return response_msg
 
     def subscribe(self, msg):
         fail = []
         for path in msg.paths:
-            if os.path.exists(os.path.join(monitored_path, path)):
-                self.subscriptions.append(path)
+            full_path = os.path.join(monitored_path, path)
+            if os.path.exists(full_path):
+                self.subscriptions.append([path, os.path.isdir(full_path)])
             else:
-                fail.append([path, 0])
+                fail.append([path, 0, False])
         response_msg = Message(MessageType.SUBSCRIBE_RESPONSE, len(self.subscriptions), self.subscriptions, len(fail), fail)
         return response_msg
 
@@ -76,13 +77,14 @@ class MessageHandler(object):
 
     def send_notify(self, event):
         relpath = os.path.relpath(event.src_path, monitored_path)
-        if relpath in self.subscriptions:
+        isdir = os.path.isdir(event.src_path)
+        if [relpath, isdir] in self.subscriptions:
             return Message({
                 'modified': MessageType.NOTIFY_CHANGE,
                 'created': MessageType.NOTIFY_CREATE,
                 'deleted': MessageType.NOTIFY_DELETE,
                 'moved': MessageType.NOTIFY_DELETE
-            }[event.event_type], relpath).toBytes()
+            }[event.event_type], relpath, isdir).toBytes()
 
 class SocketClosedException(ConnectionError):
     pass

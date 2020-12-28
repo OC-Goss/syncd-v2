@@ -32,14 +32,14 @@ class Message(object):
         MessageType.GET_FILE: Format(">n", ["path"]),
         MessageType.HELLO_OK: Format(">nn", ["protocol_version", "server_name"]),
         MessageType.HELLO_ERROR: Format(">n", ["reason"]),
-        MessageType.SEND_SUBSCRIPTIONS: Format(">I /0(n)", ["num_paths", "paths"]),
-        MessageType.SUBSCRIBE_RESPONSE: Format(">I /0(n) I /2[n H]", ["num_paths", "paths", "num_paths_fail", namedtuple("paths_fail", ["path", "error_code"])]),
-        MessageType.SEND_HASHES: Format(">I /0[n n]", ["num_paths", namedtuple("paths", ["path", "hash"])]),
+        MessageType.SEND_SUBSCRIPTIONS: Format(">I /0[n B]", ["num_paths", namedtuple("paths", ["path", "isDir"])]),
+        MessageType.SUBSCRIBE_RESPONSE: Format(">I /0[n B] I /2[n H B]", ["num_paths", namedtuple("paths", ["path", "isDir"]), "num_paths_fail", namedtuple("paths_fail", ["path", "error_code", "isDir"])]),
+        MessageType.SEND_HASHES: Format(">I /0[n 8s]", ["num_paths", namedtuple("paths", ["path", "hash"])]),
         MessageType.SEND_FILE: Format(">nn", ["path", "contents"]),
         MessageType.SEND_FILE_ERROR: Format(">nn", ["path", "reason"]),
-        MessageType.NOTIFY_CHANGE: Format(">n", ["path"]),
-        MessageType.NOTIFY_DELETE: Format(">n", ["path"]),
-        MessageType.NOTIFY_CREATE: Format(">n", ["path"]),
+        MessageType.NOTIFY_CHANGE: Format(">n B", ["path", "isDir"]),
+        MessageType.NOTIFY_DELETE: Format(">n B", ["path", "isDir"]),
+        MessageType.NOTIFY_CREATE: Format(">n B", ["path", "isDir"]),
     }
 
     def __init__(self, msg_type_or_data, *args):
@@ -66,17 +66,19 @@ class Message(object):
         try:
             raw_type = rawutil.unpack(Message.type_format, data)[0]
             self.type = MessageType(raw_type)
-            msg_format = Message.formats[self.type]
-            if msg_format.struct_fmt and len(msg_format.struct_fmt) > 0:
-                bytes_to_string = lambda obj: list(map(lambda s: s.decode("utf-8") if type(s) == bytes else s, obj)) if hasattr(obj, '__iter__') and type(obj) == list else obj
-                for name, obj in zip(msg_format.field_names, rawutil.unpack(msg_format.struct_fmt, data[rawutil.struct.calcsize(Message.type_format):])):
-                    if type(name) != str:
-                        setattr(self, name.__name__, [name._make(bytes_to_string(el)) for el in obj])
-                    else:
-                        obj = bytes_to_string(obj)
-                        setattr(self, name, obj if type(obj) != bytes else obj.decode("utf-8"))
         except ValueError as e:
             print("Unsupported message type id {}".format(raw_type))
+
+        msg_format = Message.formats[self.type]
+        if msg_format.struct_fmt and len(msg_format.struct_fmt) > 0:
+            bytes_to_string = lambda obj: list(map(lambda s: s.decode("utf-8") if type(s) == bytes else s, obj)) if hasattr(obj, '__iter__') and type(obj) == list else obj
+            for name, obj in zip(msg_format.field_names, rawutil.unpack(msg_format.struct_fmt, data[rawutil.struct.calcsize(Message.type_format):])):
+                if type(name) != str:
+                    setattr(self, name.__name__, [name._make(bytes_to_string(el)) for el in obj])
+                else:
+                    obj = bytes_to_string(obj)
+                    setattr(self, name, obj if type(obj) != bytes else obj.decode("utf-8"))
+
 
     def toBytes(self):
         byte_str = bytes()
@@ -84,5 +86,6 @@ class Message(object):
         msg_format = Message.formats[self.type]
         if msg_format.struct_fmt and len(msg_format.struct_fmt) > 0:
             field_list = [([list(el) for el in getattr(self, name.__name__)] if type(name) != str else getattr(self, name)) for name in msg_format.field_names]
+            print(*field_list)
             byte_str += rawutil.pack(msg_format.struct_fmt, *field_list)
         return byte_str

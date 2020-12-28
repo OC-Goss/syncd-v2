@@ -17,10 +17,13 @@ local handlers = {
 
     [MessageType.SEND_SUBSCRIPTIONS] = function(msg, state)
         log("Got subscription list from the server:")
-        for _, path in ipairs(msg.paths) do
-            log("%s", path)
+        state.requestedSubs = {}
+        for _, entry in ipairs(msg.paths) do
+            log("%s, isDir: %s", entry.path, tostring(entry.isDir))
+            if entry.isDir == 0 then
+                state.requestedSubs[#state.requestedSubs+1] = entry.path
+            end
         end
-        state.requestedSubs = utils.deepCopy(msg.paths)
         log("Subscribing to all paths")
         return Message(MessageType.SUBSCRIBE, #state.requestedSubs, state.requestedSubs)
     end,
@@ -33,8 +36,8 @@ local handlers = {
         end
 
         local getAll = {}
-        for i, path in ipairs(state.subs) do
-            getAll[i] = Message(MessageType.GET_FILE, path)
+        for i, entry in ipairs(state.subs) do
+            getAll[i] = Message(MessageType.GET_FILE, entry.path)
         end
         return getAll
 
