@@ -6,26 +6,26 @@ local messageHandler = require("messagehandler")
 local MessageType = require("messagetype")
 local Message = require("message")
 local Socket = require("socket")
-
-local addr = "127.0.0.1"
-local port = 2137
-local headerFormat = ">I4"
-local maxRetries = 3
-local clientName = "Syncd client alpha v0.1"
-local protocolVersion = "0.1"
+local config = require("syncdconfig")
 local socket
 
-function log(str, ...)
-    local logfile = io.open("socklog.txt", "a")
-    logfile:write(string.format(str.."\n", ...))
-    logfile:close()
+local enableLogging = true
+
+if enableLogging then
+    function log(str, ...)
+        local logfile = io.open("/home/socklog.txt", "a")
+        logfile:write(string.format(str.."\n", ...))
+        logfile:close()
+    end
+else
+    function log() end
 end
 
 local conversationState
 
 local function conversationReset()
     conversationState = {
-        subscribedPaths = {}
+        requestedSubs = {}
     }
 end
 conversationReset()
@@ -38,16 +38,18 @@ local function internetReadyHandler(ev, inetAddress, socketId)
                 log("Calling message handler with data: %s", data)
                 local response = messageHandler(data, conversationState)
                 if response then
-                    socket:writeLenPrep(response)
+                    for i = 1, #response do
+                        socket:writeLenPrep(response[i])
+                    end
                 end
             end
         else
-            if not socket:connect(addr, port) then
+            if not socket:connect(config.addr, config.port) then
                 event.ignore("internet_ready", internetReadyHandler)
             else
                 -- reset conversation state
                 conversationReset()
-                socket:writeLenPrep(Message(MessageType.HELLO, protocolVersion, clientName):toBytes())
+                socket:writeLenPrep(Message(MessageType.HELLO, config.protocolVersion, config.clientName):toBytes())
             end
         end
     end
@@ -58,9 +60,9 @@ function disconnect()
     socket:close()
 end
 
-socket = Socket(headerFormat, maxRetries)
-if not socket:connect(addr, port) then
+socket = Socket(config.headerFormat, config.maxRetries)
+if not socket:connect(config.addr, config.port) then
     error("Couldn't connect to the server, check logs for more info")
 end
 event.listen("internet_ready", internetReadyHandler)
-socket:writeLenPrep(Message(MessageType.HELLO, protocolVersion, clientName):toBytes())
+socket:writeLenPrep(Message(MessageType.HELLO, config.protocolVersion, config.clientName):toBytes())

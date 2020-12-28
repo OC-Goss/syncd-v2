@@ -47,29 +47,42 @@ class MessageHandler(object):
         to_send = []
         for root, dirs, files in os.walk(monitored_path, followlinks=True):
             for directory in dirs:
-                to_send.append(os.path.join(root, directory))
+                full_path = os.path.join(root, directory)
+                to_send.append(os.path.relpath(full_path, monitored_path))
             for file in files:
-                to_send.append(os.path.join(root, file))
+                full_path = os.path.join(root, file)
+                to_send.append(os.path.relpath(full_path, monitored_path))
         response_msg = Message(MessageType.SEND_SUBSCRIPTIONS, len(to_send), to_send)
         return response_msg
 
     def subscribe(self, msg):
-        self.subscriptions = msg.paths
+        fail = []
+        for path in msg.paths:
+            if os.path.exists(os.path.join(monitored_path, path)):
+                self.subscriptions.append(path)
+            else:
+                fail.append([path, 0])
+        response_msg = Message(MessageType.SUBSCRIBE_RESPONSE, len(self.subscriptions), self.subscriptions, len(fail), fail)
+        return response_msg
 
     def compare_files(self, msg):
         pass
 
     def get_file(self, msg):
-        pass
+        file = open(os.path.join(monitored_path, msg.path))
+        response_msg = Message(MessageType.SEND_FILE, msg.path, "".join(file.readlines()))
+        file.close()
+        return response_msg
 
     def send_notify(self, event):
-        if event.src_path in self.subscriptions:
+        relpath = os.path.relpath(event.src_path, monitored_path)
+        if relpath in self.subscriptions:
             return Message({
                 'modified': MessageType.NOTIFY_CHANGE,
                 'created': MessageType.NOTIFY_CREATE,
                 'deleted': MessageType.NOTIFY_DELETE,
                 'moved': MessageType.NOTIFY_DELETE
-            }[event.event_type], event.src_path).toBytes()
+            }[event.event_type], relpath).toBytes()
 
 class SocketClosedException(ConnectionError):
     pass
