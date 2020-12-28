@@ -86,6 +86,5 @@ class Message(object):
         msg_format = Message.formats[self.type]
         if msg_format.struct_fmt and len(msg_format.struct_fmt) > 0:
             field_list = [([list(el) for el in getattr(self, name.__name__)] if type(name) != str else getattr(self, name)) for name in msg_format.field_names]
-            print(*field_list)
             byte_str += rawutil.pack(msg_format.struct_fmt, *field_list)
         return byte_str
