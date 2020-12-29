@@ -1,3 +1,9 @@
+package.loaded.messagehandler = nil
+package.loaded.messagetype = nil
+package.loaded.message = nil
+package.loaded.socket = nil
+package.loaded.syncdconfig = nil
+package.loaded.utils = nil
 local component = require("component")
 local internet = component.isAvailable("internet") and component.internet
 local event = require("event")
