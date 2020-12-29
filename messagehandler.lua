@@ -20,16 +20,19 @@ local handlers = {
         state.requestedSubs = {}
         for _, entry in ipairs(msg.paths) do
             log("%s, isDir: %s", entry.path, tostring(entry.isDir))
-            if entry.isDir == 0 then
-                state.requestedSubs[#state.requestedSubs+1] = entry.path
-            end
+            state.requestedSubs[#state.requestedSubs+1] = entry.path
         end
         log("Subscribing to all paths")
         return Message(MessageType.SUBSCRIBE, #state.requestedSubs, state.requestedSubs)
     end,
     
     [MessageType.SUBSCRIBE_RESPONSE] = function(msg, state)
-        state.subs = utils.deepCopy(msg.paths)
+        if not state.subs then
+            state.subs = {}
+        end
+        for _, entry in ipairs(msg.paths) do
+            state.subs[#state.subs+1] = entry
+        end
         log("Failed to subscribe to paths:")
         for _, failed in ipairs(msg.pathsFail) do
             log("%s", failed.path)
@@ -37,7 +40,11 @@ local handlers = {
 
         local getAll = {}
         for i, entry in ipairs(state.subs) do
-            getAll[i] = Message(MessageType.GET_FILE, entry.path)
+            if entry.isDir == 0 then
+                getAll[#getAll+1] = Message(MessageType.GET_FILE, entry.path)
+            else
+                filesystem.makeDirectory(filesystem.concat(config.localDir, entry.path))
+            end
         end
         return getAll
 
@@ -66,25 +73,43 @@ local handlers = {
     [MessageType.SEND_FILE] = function(msg, state)
         local targetPath = filesystem.concat(config.localDir, msg.path)
         log("Got requested file %s, saving as %s", msg.path, targetPath)
+        filesystem.makeDirectory(filesystem.path(targetPath))
         local file = io.open(targetPath, "w")
         file:write(msg.contents)
         file:close()
     end,
-    [MessageType.SEND_FILE_ERROR] = function(msg, state) end,
+    [MessageType.SEND_FILE_ERROR] = function(msg, state)
+        log("Error requesting file %s, server responded with: %s", msg.path, msg.reason)
+    end,
 
     [MessageType.NOTIFY_CHANGE] = function(msg, state)
-        log("File %s modified", msg.path)
-        return Message(MessageType.GET_FILE, msg.path)
+        log("%s modified", msg.path)
+        if msg.isDir == 0 then
+            return Message(MessageType.GET_FILE, msg.path)
+        end
     end,
 
     [MessageType.NOTIFY_DELETE] = function(msg, state)
-        log("File %s deleted", msg.path)
+        log("%s deleted", msg.path)
         filesystem.remove(filesystem.concat(config.localDir, msg.path))
     end,
     
     [MessageType.NOTIFY_CREATE] = function(msg, state)
-        log("File %s created", msg.path)
-        io.open(filesystem.concat(config.localDir, msg.path), "w"):close()
+        log("%s created", msg.path)
+        local targetPath = filesystem.concat(config.localDir, msg.path)
+        if msg.isDir == 0 then
+            io.open(targetPath, "w"):close()
+        elseif msg.isDir == 1 then
+            filesystem.makeDirectory(targetPath)
+            log("Subscribing to new folder: %s", msg.path)
+            return Message(MessageType.SUBSCRIBE, 1, {msg.path})
+        end
+    end,
+
+    [MessageType.NOTIFY_MOVE] = function(msg, state)
+        log("%s moved to %s", msg.srcPath, msg.dstPath)
+        filesystem.rename(filesystem.concat(config.localDir, msg.srcPath), filesystem.concat(config.localDir, msg.dstPath))
+        filesystem.remove(filesystem.concat(config.localDir, msg.srcPath))
     end,
 }
 

@@ -7,6 +7,7 @@ from queue import Queue, Empty
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from message import Message, MessageType
+from pathlib import Path, PurePath
 
 host = ""
 port = 2137
@@ -28,6 +29,7 @@ class MessageHandler(object):
             MessageType.GET_FILE: self.get_file
         }
         self.subscriptions = []
+        self.basepath = Path(monitored_path)
 
     def handle(self, data):
         msg = Message(data)
@@ -44,47 +46,59 @@ class MessageHandler(object):
             return response_msg
 
     def get_subscriptions(self, msg):
-        to_send = []
-        for root, dirs, files in os.walk(monitored_path, followlinks=True):
-            for directory in dirs:
-                full_path = os.path.join(root, directory)
-                to_send.append([os.path.relpath(full_path, monitored_path), True])
-            for file in files:
-                full_path = os.path.join(root, file)
-                to_send.append([os.path.relpath(full_path, monitored_path), False])
+        to_send = [[path.as_posix(), (self.basepath / path).is_dir()] for path in self.walk_tree(self.basepath)]
+        to_send.append(['.', True])
         response_msg = Message(MessageType.SEND_SUBSCRIPTIONS, len(to_send), to_send)
         return response_msg
 
     def subscribe(self, msg):
         fail = []
+        subscribed = []
         for path in msg.paths:
-            full_path = os.path.join(monitored_path, path)
-            if os.path.exists(full_path):
-                self.subscriptions.append([path, os.path.isdir(full_path)])
+            path = Path(path)
+            fullpath = self.basepath / path
+            if fullpath.exists():
+                subscribed.append([path.as_posix(), fullpath.is_dir()])
+                self.subscriptions.append(path)
             else:
-                fail.append([path, 0, False])
-        response_msg = Message(MessageType.SUBSCRIBE_RESPONSE, len(self.subscriptions), self.subscriptions, len(fail), fail)
+                fail.append([path.as_posix(), 0, False])
+        response_msg = Message(MessageType.SUBSCRIBE_RESPONSE, len(subscribed), subscribed, len(fail), fail)
         return response_msg
 
     def compare_files(self, msg):
         pass
 
     def get_file(self, msg):
-        file = open(os.path.join(monitored_path, msg.path))
-        response_msg = Message(MessageType.SEND_FILE, msg.path, "".join(file.readlines()))
-        file.close()
-        return response_msg
+        fullpath = self.basepath / msg.path
+        if fullpath.is_file():
+            return Message(MessageType.SEND_FILE, msg.path, fullpath.read_bytes())
+        elif fullpath.is_dir():
+            return Message(MessageType.SEND_FILE_ERROR, "Path is a directory")
+        elif not fullpath.exists():
+            return Message(MessageType.SEND_FILE_ERROR, "File doesn't exist")
+        else:
+            return Message(MessageType.SEND_FILE_ERROR, "Internal server error")
 
     def send_notify(self, event):
-        relpath = os.path.relpath(event.src_path, monitored_path)
-        isdir = os.path.isdir(event.src_path)
-        if [relpath, isdir] in self.subscriptions:
-            return Message({
-                'modified': MessageType.NOTIFY_CHANGE,
-                'created': MessageType.NOTIFY_CREATE,
-                'deleted': MessageType.NOTIFY_DELETE,
-                'moved': MessageType.NOTIFY_DELETE
-            }[event.event_type], relpath, isdir).toBytes()
+        relpath = Path(event.src_path).relative_to(self.basepath)
+        if relpath in self.subscriptions or relpath.parent in self.subscriptions:
+            if event.event_type in ['modified', 'created', 'deleted']:
+                return Message({
+                    'modified': MessageType.NOTIFY_CHANGE,
+                    'created': MessageType.NOTIFY_CREATE,
+                    'deleted': MessageType.NOTIFY_DELETE,
+                }[event.event_type], relpath.as_posix(), Path(event.src_path).is_dir()).toBytes()
+            elif event.event_type == 'moved':
+                destpath = Path(event.dest_path)
+                return Message(MessageType.NOTIFY_MOVE, relpath.as_posix(), destpath.relative_to(self.basepath).as_posix(), destpath.is_dir()).toBytes()
+
+    def walk_tree(self, basedir):
+        for root, dirs, files in os.walk(basedir, followlinks=True):
+            root = Path(root)
+            for directory in dirs:
+                yield (root / directory).relative_to(basedir)
+            for file in files:
+                yield (root / file).relative_to(basedir)
 
 class SocketClosedException(ConnectionError):
     pass
