@@ -15,6 +15,7 @@ local MessageType = {
     NOTIFY_CHANGE = 0x87,
     NOTIFY_DELETE = 0x88,
     NOTIFY_CREATE = 0x89,
+    NOTIFY_MOVE = 0x8A,
 
     [0x00] = "HELLO",
     [0x01] = "GET_SUBSCRIPTIONS",
@@ -31,7 +32,8 @@ local MessageType = {
     [0x86] = "SEND_FILE_ERROR",
     [0x87] = "NOTIFY_CHANGE",
     [0x88] = "NOTIFY_DELETE",
-    [0x89] = "NOTIFY_CREATE"
+    [0x89] = "NOTIFY_CREATE",
+    [0x8A] = "NOTIFY_MOVE",
 }
 
 return MessageType

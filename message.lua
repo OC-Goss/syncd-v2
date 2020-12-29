@@ -33,6 +33,7 @@ Message.formats = {
     [MessageType.NOTIFY_CHANGE] = Format(">zI1", {"path", "isDir"}),
     [MessageType.NOTIFY_DELETE] = Format(">zI1", {"path", "isDir"}),
     [MessageType.NOTIFY_CREATE] = Format(">zI1", {"path", "isDir"}),
+    [MessageType.NOTIFY_MOVE] = Format(">zzI1", {"srcPath", "dstPath", "isDir"}),
 }
 
 local function unpackArray(lenPattern, pattern, data, offset, fieldNames)

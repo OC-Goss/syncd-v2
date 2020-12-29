@@ -19,6 +19,7 @@ class MessageType(Enum):
     NOTIFY_CHANGE = 0x87
     NOTIFY_DELETE = 0x88
     NOTIFY_CREATE = 0x89
+    NOTIFY_MOVE = 0x8A
 
 Format = namedtuple('Format', ['struct_fmt', 'field_names'])
 
@@ -40,6 +41,7 @@ class Message(object):
         MessageType.NOTIFY_CHANGE: Format(">n B", ["path", "isDir"]),
         MessageType.NOTIFY_DELETE: Format(">n B", ["path", "isDir"]),
         MessageType.NOTIFY_CREATE: Format(">n B", ["path", "isDir"]),
+        MessageType.NOTIFY_MOVE: Format(">nn B", ["src_path", "dst_path", "isDir"]),
     }
 
     def __init__(self, msg_type_or_data, *args):
