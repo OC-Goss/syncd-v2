@@ -15,7 +15,7 @@ paths = ["foo.lua", "bar.txt", "baz.py"]
 paths2 = [["foo.lua", 5363], ["bar.txt", 324], ["baz.py", 64312]]
 paths3 = [["baz.exe", 43, False], ["foo.psd", 234, False], ["bar/", 73, True]]
 paths4 = [["bar.lua", "3fj0dcle"], ["baz.html", "j6k4pdcs"], ["foo.xml", "k305dcms"]]
-paths5 = [["foo.lua", 0], ["bar/", 1], ["bar/baz.lua", 0]]
+paths5 = [["foo.lua", False], ["bar/", True], ["bar/baz.lua", False]]
 test(MessageType.HELLO, "v0.1", "v0.2")
 test(MessageType.GET_SUBSCRIPTIONS)
 test(MessageType.SUBSCRIBE, len(paths), paths)
